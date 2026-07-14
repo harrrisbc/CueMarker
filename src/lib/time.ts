@@ -24,6 +24,26 @@ export function formatTimePrecise(seconds: number): string {
   return body
 }
 
+/** Parse MM:SS, HH:MM:SS, MM:SS.t, or raw seconds into seconds. */
+export function parseTime(input: string): number | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const n = Number(trimmed)
+    return Number.isFinite(n) && n >= 0 ? n : null
+  }
+  const parts = trimmed.split(':')
+  if (parts.length < 2 || parts.length > 3) return null
+  const nums = parts.map((p) => Number(p))
+  if (nums.some((n) => !Number.isFinite(n) || n < 0)) return null
+  if (parts.length === 2) {
+    const [m, s] = nums
+    return (m ?? 0) * 60 + (s ?? 0)
+  }
+  const [h, m, s] = nums
+  return (h ?? 0) * 3600 + (m ?? 0) * 60 + (s ?? 0)
+}
+
 export function extractYouTubeId(url: string): string | null {
   const trimmed = url.trim()
   if (!trimmed) return null
