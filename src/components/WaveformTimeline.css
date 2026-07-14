@@ -1,0 +1,117 @@
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.timeline-empty {
+  padding: 1.25rem;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.timeline-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.timeline-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.85;
+}
+
+.wave-wrap {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #161311, #0e0c0a);
+  padding: 0.35rem 0.25rem;
+  overflow: hidden;
+}
+
+.wave-host {
+  width: 100%;
+  min-height: 96px;
+}
+
+.ruler {
+  position: relative;
+  height: 88px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #161311, #0e0c0a);
+  cursor: crosshair;
+  outline: none;
+}
+
+.ruler:focus-visible {
+  border-color: var(--amber);
+}
+
+.ruler-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: rgba(240, 217, 168, 0.2);
+  transform: translateY(-50%);
+}
+
+.ruler-playhead {
+  position: absolute;
+  top: 8px;
+  bottom: 22px;
+  width: 2px;
+  background: #f0d9a8;
+  transform: translateX(-1px);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.ruler-region {
+  position: absolute;
+  top: 18px;
+  height: 36px;
+  background: rgba(232, 168, 56, 0.28);
+  border: 1px solid rgba(232, 168, 56, 0.5);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.ruler-region.is-pending {
+  background: rgba(232, 168, 56, 0.15);
+  border-style: dashed;
+}
+
+.ruler-bullet {
+  position: absolute;
+  top: 14px;
+  width: 3px;
+  height: 44px;
+  background: var(--cyan);
+  transform: translateX(-1.5px);
+  box-shadow: 0 0 8px rgba(92, 196, 196, 0.45);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.ruler-ticks {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  pointer-events: none;
+}
