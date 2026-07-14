@@ -143,6 +143,12 @@
   color: var(--cyan);
 }
 
+.btn-stop {
+  background: linear-gradient(180deg, rgba(220, 100, 80, 0.2), rgba(220, 100, 80, 0.06));
+  border-color: rgba(220, 100, 80, 0.45);
+  color: var(--danger);
+}
+
 .recording-pill {
   font-size: 0.72rem;
   color: var(--amber);

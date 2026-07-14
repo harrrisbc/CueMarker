@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import { formatTime } from '../lib/time'
 import './Toolbar.css'
 
 interface ToolbarProps {
@@ -7,11 +8,14 @@ interface ToolbarProps {
   onImportMp4: (file: File) => void
   onImportYouTube: (url: string) => void
   onMarkCue: () => void
+  onStopCue: () => void
   onBullet: () => void
   onExportCsv: () => void
   onExportPdf: () => void
   onSaveJson: () => void
   onLoadJson: (file: File) => void
+  isRecording: boolean
+  recordingStart: number | null
   hasMedia: boolean
   cueCount: number
 }
@@ -22,11 +26,14 @@ export function Toolbar({
   onImportMp4,
   onImportYouTube,
   onMarkCue,
+  onStopCue,
   onBullet,
   onExportCsv,
   onExportPdf,
   onSaveJson,
   onLoadJson,
+  isRecording,
+  recordingStart,
   hasMedia,
   cueCount,
 }: ToolbarProps) {
@@ -104,22 +111,36 @@ export function Toolbar({
       <div className="toolbar-mark">
         <button
           type="button"
-          className="btn btn-cue"
+          className={`btn btn-cue ${isRecording ? 'is-recording' : ''}`}
           onClick={onMarkCue}
           disabled={!hasMedia}
-          title="Place continuous duration cue (M)"
+          title="Start duration cue (M)"
         >
-          Mark Cue · M
+          {isRecording ? `Recording… ${formatTime(recordingStart ?? 0)}` : 'Mark Cue · M'}
+        </button>
+        <button
+          type="button"
+          className="btn btn-stop"
+          onClick={onStopCue}
+          disabled={!hasMedia || !isRecording}
+          title="Stop recording cue (N)"
+        >
+          Stop Cue · N
         </button>
         <button
           type="button"
           className="btn btn-bullet"
           onClick={onBullet}
-          disabled={!hasMedia}
+          disabled={!hasMedia || isRecording}
           title="Bullet flash marker (B)"
         >
           Bullet · B
         </button>
+        {isRecording && (
+          <span className="recording-pill" role="status">
+            Recording — press N to stop
+          </span>
+        )}
       </div>
 
       <div className="toolbar-export">

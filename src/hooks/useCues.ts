@@ -11,8 +11,11 @@ function renumber(cues: Cue[]): Cue[] {
     .map((c, i) => ({ ...c, number: i + 1 }))
 }
 
-/** Abut duration cues: each ends where the next duration cue starts (or at media end). */
-export function recomputeContinuousEnds(cues: Cue[], mediaDuration: number): Cue[] {
+/**
+ * Abut duration cues to the next cue's start when there is a following cue.
+ * The last closed cue keeps its explicit end (does not stretch to media end).
+ */
+export function recomputeContinuousEnds(cues: Cue[]): Cue[] {
   const durationCues = cues
     .filter((c) => c.type === 'cue')
     .sort((a, b) => a.start - b.start)
@@ -21,8 +24,12 @@ export function recomputeContinuousEnds(cues: Cue[], mediaDuration: number): Cue
   for (let i = 0; i < durationCues.length; i++) {
     const cur = durationCues[i]!
     const next = durationCues[i + 1]
-    const end = next ? Math.max(next.start, cur.start) : Math.max(mediaDuration || cur.start, cur.start)
-    endById.set(cur.id, end)
+    if (next) {
+      endById.set(cur.id, Math.max(next.start, cur.start))
+    } else {
+      const explicit = cur.end != null && Number.isFinite(cur.end) ? cur.end : cur.start
+      endById.set(cur.id, Math.max(explicit, cur.start))
+    }
   }
 
   return renumber(
@@ -36,67 +43,104 @@ export function recomputeContinuousEnds(cues: Cue[], mediaDuration: number): Cue
 
 export function useCues(initial: Cue[] = []) {
   const [cues, setCues] = useState<Cue[]>(initial)
-  const [mediaDuration, setMediaDuration] = useState(0)
+  const [recordingId, setRecordingId] = useState<string | null>(null)
 
-  const replaceCues = useCallback((next: Cue[], duration = mediaDuration) => {
-    setCues(recomputeContinuousEnds(next, duration))
-  }, [mediaDuration])
+  const isRecording = recordingId !== null
 
-  const syncMediaDuration = useCallback((duration: number) => {
-    setMediaDuration(duration)
-    setCues((prev) => recomputeContinuousEnds(prev, duration))
+  const replaceCues = useCallback((next: Cue[]) => {
+    setCues(recomputeContinuousEnds(next))
+    setRecordingId(null)
   }, [])
 
-  /** One-press continuous duration cue at playhead. */
-  const addContinuousCue = useCallback(
-    (currentTime: number, thumbnail: string | null) => {
-      const t = Math.max(0, currentTime)
-      const cue: Cue = {
-        id: newId(),
-        number: 0,
-        type: 'cue',
-        start: t,
-        end: t,
-        name: '',
-        remark: '',
-        thumbnail,
+  /** Start a duration cue at playhead. If already recording, end the open cue first. */
+  const startCue = useCallback((currentTime: number, thumbnail: string | null) => {
+    const t = Math.max(0, currentTime)
+    const id = newId()
+    const cue: Cue = {
+      id,
+      number: 0,
+      type: 'cue',
+      start: t,
+      end: t,
+      name: '',
+      remark: '',
+      thumbnail,
+    }
+
+    setCues((prev) => {
+      let working = prev
+      if (recordingId) {
+        working = prev.map((c) =>
+          c.id === recordingId ? { ...c, end: Math.max(c.start, t) } : c,
+        )
       }
-      let created!: Cue
+      return recomputeContinuousEnds([...working, cue])
+    })
+    setRecordingId(id)
+    return { cue, beganRecording: true as const }
+  }, [recordingId])
+
+  /** Stop the open recording cue at playhead. */
+  const stopCue = useCallback((currentTime: number) => {
+    if (!recordingId) return null
+    const t = Math.max(0, currentTime)
+    const id = recordingId
+    let stopped: Cue | null = null
+    setCues((prev) => {
+      const next = recomputeContinuousEnds(
+        prev.map((c) => {
+          if (c.id !== id) return c
+          return { ...c, end: Math.max(c.start, t) }
+        }),
+      )
+      stopped = next.find((c) => c.id === id) ?? null
+      return next
+    })
+    setRecordingId(null)
+    return stopped
+  }, [recordingId])
+
+  /** Live-stretch the open cue to the playhead while recording. */
+  const tickRecording = useCallback(
+    (currentTime: number) => {
+      if (!recordingId) return
+      const t = Math.max(0, currentTime)
       setCues((prev) => {
-        // Avoid duplicate starts within 40ms
-        const clash = prev.some((c) => c.type === 'cue' && Math.abs(c.start - t) < 0.04)
-        const nextList = clash ? prev : [...prev, cue]
-        const next = recomputeContinuousEnds(nextList, mediaDuration)
-        created = next.find((c) => c.id === cue.id) ?? next.find((c) => Math.abs(c.start - t) < 0.04)!
-        return next
+        const cur = prev.find((c) => c.id === recordingId)
+        if (!cur || Math.abs((cur.end ?? cur.start) - t) < 0.05) return prev
+        return prev.map((c) =>
+          c.id === recordingId ? { ...c, end: Math.max(c.start, t) } : c,
+        )
       })
-      return created
     },
-    [mediaDuration],
+    [recordingId],
   )
 
-  const addBullet = useCallback(
-    (currentTime: number, thumbnail: string | null) => {
-      const cue: Cue = {
-        id: newId(),
-        number: 0,
-        type: 'bullet',
-        start: Math.max(0, currentTime),
-        end: null,
-        name: '',
-        remark: '',
-        thumbnail,
-      }
-      let created!: Cue
-      setCues((prev) => {
-        const next = recomputeContinuousEnds([...prev, cue], mediaDuration)
-        created = next.find((c) => c.id === cue.id)!
-        return next
-      })
-      return created
-    },
-    [mediaDuration],
-  )
+  const cancelRecording = useCallback(() => {
+    if (!recordingId) return
+    setCues((prev) => recomputeContinuousEnds(prev.filter((c) => c.id !== recordingId)))
+    setRecordingId(null)
+  }, [recordingId])
+
+  const addBullet = useCallback((currentTime: number, thumbnail: string | null) => {
+    const cue: Cue = {
+      id: newId(),
+      number: 0,
+      type: 'bullet',
+      start: Math.max(0, currentTime),
+      end: null,
+      name: '',
+      remark: '',
+      thumbnail,
+    }
+    let created!: Cue
+    setCues((prev) => {
+      const next = recomputeContinuousEnds([...prev, cue])
+      created = next.find((c) => c.id === cue.id)!
+      return next
+    })
+    return created
+  }, [])
 
   const updateCue = useCallback(
     (id: string, patch: Partial<Pick<Cue, 'name' | 'remark' | 'start' | 'end'>>) => {
@@ -109,6 +153,9 @@ export function useCues(initial: Cue[] = []) {
           }
           if (typeof next.start === 'number') {
             next.start = Math.max(0, next.start)
+          }
+          if (typeof next.end === 'number') {
+            next.end = Math.max(next.start, next.end)
           }
           return next
         })
@@ -125,52 +172,58 @@ export function useCues(initial: Cue[] = []) {
             if (following) {
               const newStart = Math.max(edited.start + 0.05, patch.end)
               mapped = mapped.map((c) =>
-                c.id === following.id ? { ...c, start: Math.min(newStart, mediaDuration || newStart) } : c,
+                c.id === following.id ? { ...c, start: newStart } : c,
               )
             }
           }
         }
 
-        return recomputeContinuousEnds(mapped, mediaDuration)
+        return recomputeContinuousEnds(mapped)
       })
     },
-    [mediaDuration],
+    [],
   )
 
-  const setCueTimes = useCallback(
-    (id: string, times: { start: number; end?: number | null }) => {
-      setCues((prev) => {
-        const mapped = prev.map((c) => {
-          if (c.id !== id) return c
-          if (c.type === 'bullet') {
-            return { ...c, start: Math.max(0, times.start), end: null }
-          }
-          return {
-            ...c,
-            start: Math.max(0, times.start),
-            end: times.end != null ? Math.max(times.start, times.end) : c.end,
-          }
-        })
-        return recomputeContinuousEnds(mapped, mediaDuration)
+  const setCueTimes = useCallback((id: string, times: { start: number; end?: number | null }) => {
+    setCues((prev) => {
+      const mapped = prev.map((c) => {
+        if (c.id !== id) return c
+        if (c.type === 'bullet') {
+          return { ...c, start: Math.max(0, times.start), end: null }
+        }
+        const start = Math.max(0, times.start)
+        const end =
+          times.end != null ? Math.max(start, times.end) : Math.max(start, c.end ?? start)
+        return { ...c, start, end }
       })
-    },
-    [mediaDuration],
-  )
+      return recomputeContinuousEnds(mapped)
+    })
+  }, [])
 
   const deleteCue = useCallback(
     (id: string) => {
-      setCues((prev) => recomputeContinuousEnds(prev.filter((c) => c.id !== id), mediaDuration))
+      if (recordingId === id) setRecordingId(null)
+      setCues((prev) => recomputeContinuousEnds(prev.filter((c) => c.id !== id)))
     },
-    [mediaDuration],
+    [recordingId],
   )
 
   const sorted = useMemo(() => [...cues].sort((a, b) => a.start - b.start), [cues])
+  const recordingStart = useMemo(() => {
+    if (!recordingId) return null
+    return cues.find((c) => c.id === recordingId)?.start ?? null
+  }, [cues, recordingId])
 
   return {
     cues: sorted,
+    recordingId,
+    recordingStart,
+    isRecording,
     replaceCues,
-    syncMediaDuration,
-    addContinuousCue,
+    startCue,
+    stopCue,
+    tickRecording,
+    cancelRecording,
     addBullet,
     updateCue,
     setCueTimes,
