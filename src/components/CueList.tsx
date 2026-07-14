@@ -65,7 +65,7 @@ export function CueList({ cues, mediaDuration, onUpdate, onDelete, onJump }: Cue
         <div className="cue-empty">
           <p>No cues yet</p>
           <p className="cue-empty-hint">
-            Press <kbd>M</kbd> for a continuous duration cue, or <kbd>B</kbd> for a flash bullet.
+            Press <kbd>M</kbd> to start a cue, <kbd>N</kbd> to stop it, or <kbd>B</kbd> for a flash bullet.
           </p>
         </div>
       ) : (

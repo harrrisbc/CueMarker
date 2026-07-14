@@ -34,9 +34,13 @@ function App() {
 
   const {
     cues,
+    isRecording,
+    recordingStart,
     replaceCues,
-    syncMediaDuration,
-    addContinuousCue,
+    startCue,
+    stopCue,
+    tickRecording,
+    cancelRecording,
     addBullet,
     updateCue,
     setCueTimes,
@@ -57,10 +61,11 @@ function App() {
   const mp4UrlRef = useRef(mp4Url)
   mp4UrlRef.current = mp4Url
 
-  // Keep continuous cue ends aligned to media duration
+  // Live-update open cue end while recording
   useEffect(() => {
-    if (duration > 0) syncMediaDuration(duration)
-  }, [duration, syncMediaDuration])
+    if (!isRecording) return
+    tickRecording(currentTime)
+  }, [isRecording, currentTime, tickRecording])
 
   // Hydrate from IndexedDB once
   useEffect(() => {
@@ -184,13 +189,14 @@ function App() {
     setFileName(file.name)
     setPeaks(null)
     setPeaksStatus('building')
+    cancelRecording()
     try {
       await saveMediaBlob(file)
     } catch {
       setStatus('Warning: MP4 could not be cached locally (file may be too large)')
     }
     setStatus(`Loaded ${file.name}`)
-  }, [])
+  }, [cancelRecording])
 
   const handleImportYouTube = useCallback(async (url: string) => {
     const id = extractYouTubeId(url)
@@ -209,24 +215,33 @@ function App() {
     setYoutubeId(id)
     setMediaKind('youtube')
     setFileName(null)
+    cancelRecording()
     setStatus('YouTube loaded — screenshots unavailable (browser limit)')
-  }, [])
+  }, [cancelRecording])
 
   const handleMarkCue = useCallback(() => {
     if (!hasMedia) return
     const t = controller.getCurrentTime()
     const thumb = grabThumb()
-    const cue = addContinuousCue(t, thumb)
-    setStatus(`Cue #${cue?.number ?? ''} @ ${t.toFixed(1)}s`)
-  }, [hasMedia, controller, grabThumb, addContinuousCue])
+    const { cue } = startCue(t, thumb)
+    setStatus(`Cue started @ ${t.toFixed(1)}s — press N to stop`)
+    return cue
+  }, [hasMedia, controller, grabThumb, startCue])
+
+  const handleStopCue = useCallback(() => {
+    if (!hasMedia || !isRecording) return
+    const t = controller.getCurrentTime()
+    stopCue(t)
+    setStatus(`Cue stopped @ ${t.toFixed(1)}s`)
+  }, [hasMedia, isRecording, controller, stopCue])
 
   const handleBullet = useCallback(() => {
-    if (!hasMedia) return
+    if (!hasMedia || isRecording) return
     const t = controller.getCurrentTime()
     const thumb = grabThumb()
     const cue = addBullet(t, thumb)
     setStatus(`Bullet #${cue.number} @ ${t.toFixed(1)}s`)
-  }, [hasMedia, controller, grabThumb, addBullet])
+  }, [hasMedia, isRecording, controller, grabThumb, addBullet])
 
   const handleSaveJson = useCallback(() => {
     downloadProjectJson({
@@ -243,7 +258,7 @@ function App() {
       try {
         const project = await readProjectJsonFile(file)
         setProjectName(project.projectName)
-        replaceCues(project.cues, duration)
+        replaceCues(project.cues)
         if (project.media.kind === 'youtube' && project.media.youtubeId) {
           if (mp4UrlRef.current) {
             URL.revokeObjectURL(mp4UrlRef.current)
@@ -271,7 +286,7 @@ function App() {
         setStatus(err instanceof Error ? err.message : 'Could not load JSON')
       }
     },
-    [replaceCues, duration, mediaKind],
+    [replaceCues, mediaKind],
   )
 
   useEffect(() => {
@@ -280,9 +295,20 @@ function App() {
       const tag = target?.tagName?.toLowerCase()
       if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) return
 
+      if (e.key === 'Escape' && isRecording) {
+        e.preventDefault()
+        cancelRecording()
+        setStatus('Recording cancelled')
+        return
+      }
       if (e.key === 'm' || e.key === 'M') {
         e.preventDefault()
         handleMarkCue()
+        return
+      }
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault()
+        handleStopCue()
         return
       }
       if (e.key === 'b' || e.key === 'B') {
@@ -297,7 +323,15 @@ function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [handleMarkCue, handleBullet, togglePlay, hasMedia])
+  }, [
+    handleMarkCue,
+    handleStopCue,
+    handleBullet,
+    cancelRecording,
+    isRecording,
+    togglePlay,
+    hasMedia,
+  ])
 
   const noteBanner = useMemo(() => {
     if (mediaKind === 'youtube') {
@@ -314,11 +348,14 @@ function App() {
         onImportMp4={handleImportMp4}
         onImportYouTube={handleImportYouTube}
         onMarkCue={handleMarkCue}
+        onStopCue={handleStopCue}
         onBullet={handleBullet}
         onExportCsv={() => exportCuesCsv(cues, projectName)}
         onExportPdf={() => void exportCuesPdf(cues, projectName)}
         onSaveJson={handleSaveJson}
         onLoadJson={handleLoadJson}
+        isRecording={isRecording}
+        recordingStart={recordingStart}
         hasMedia={hasMedia}
         cueCount={cues.length}
       />

@@ -7,7 +7,7 @@ Local-first web app for lighting and theatre designers to mark cues on rehearsal
 - **Import** a local MP4 or paste a YouTube URL
 - **Stable timeline** for long rehearsals (overview mode for multi-hour clips; waveform when safe)
 - **Trackpad-friendly**: scroll to pan, pinch / Ctrl+scroll to zoom
-- **Continuous duration cues** — press **M** once; each cue runs until the next
+- **Duration cues** — press **M** to start, **N** (or Stop Cue) to end
 - **Bullet markers** — press **B** for a single flash point
 - **Drag markers** on the timeline to adjust time; edit start/end in the cue list
 - **Cue list** with number, time, name, remark, thumbnail, Jump, and Delete
@@ -19,8 +19,10 @@ Local-first web app for lighting and theatre designers to mark cues on rehearsal
 
 | Key | Action |
 |-----|--------|
-| `M` | Place continuous duration cue at playhead |
+| `M` | Start duration cue at playhead |
+| `N` | Stop recording cue at playhead |
 | `B` | Place bullet marker |
+| `Esc` | Cancel open recording |
 | `Space` | Play / pause |
 
 ## Run locally
