@@ -1,0 +1,10 @@
+# AI notes vault
+
+This repo is a personal idea dump for the owner. Prefer capturing thoughts into `notes/` over chatting and losing them.
+
+When the user shares an idea, plan, or "pack this up" request:
+
+- Write markdown under `notes/inbox/`, `notes/ideas/`, or `notes/projects/` as appropriate
+- Follow `AGENTS.md` and the templates in `templates/`
+- Update folder README indexes and `notes/README.md` Recent section
+- Never invent details the user did not provide
