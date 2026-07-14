@@ -1,5 +1,4 @@
 import { useRef } from 'react'
-import { formatTime } from '../lib/time'
 import './Toolbar.css'
 
 interface ToolbarProps {
@@ -11,8 +10,8 @@ interface ToolbarProps {
   onBullet: () => void
   onExportCsv: () => void
   onExportPdf: () => void
-  isRecording: boolean
-  pendingStart: number | null
+  onSaveJson: () => void
+  onLoadJson: (file: File) => void
   hasMedia: boolean
   cueCount: number
 }
@@ -26,12 +25,13 @@ export function Toolbar({
   onBullet,
   onExportCsv,
   onExportPdf,
-  isRecording,
-  pendingStart,
+  onSaveJson,
+  onLoadJson,
   hasMedia,
   cueCount,
 }: ToolbarProps) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const jsonRef = useRef<HTMLInputElement>(null)
   const ytRef = useRef<HTMLInputElement>(null)
 
   return (
@@ -59,6 +59,17 @@ export function Toolbar({
           onChange={(e) => {
             const f = e.target.files?.[0]
             if (f) onImportMp4(f)
+            e.target.value = ''
+          }}
+        />
+        <input
+          ref={jsonRef}
+          type="file"
+          accept="application/json,.json,.cuemarker.json"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) onLoadJson(f)
             e.target.value = ''
           }}
         />
@@ -93,32 +104,31 @@ export function Toolbar({
       <div className="toolbar-mark">
         <button
           type="button"
-          className={`btn btn-cue ${isRecording ? 'is-recording' : ''}`}
+          className="btn btn-cue"
           onClick={onMarkCue}
           disabled={!hasMedia}
-          title="Mark duration cue (M)"
+          title="Place continuous duration cue (M)"
         >
-          {isRecording
-            ? `End Cue · started ${formatTime(pendingStart ?? 0)}`
-            : 'Mark Cue · M'}
+          Mark Cue · M
         </button>
         <button
           type="button"
           className="btn btn-bullet"
           onClick={onBullet}
-          disabled={!hasMedia || isRecording}
+          disabled={!hasMedia}
           title="Bullet flash marker (B)"
         >
           Bullet · B
         </button>
-        {isRecording && (
-          <span className="recording-pill" role="status">
-            Recording cue…
-          </span>
-        )}
       </div>
 
       <div className="toolbar-export">
+        <button type="button" className="btn btn-ghost" onClick={onSaveJson}>
+          Save JSON
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={() => jsonRef.current?.click()}>
+          Load JSON
+        </button>
         <button
           type="button"
           className="btn btn-ghost"

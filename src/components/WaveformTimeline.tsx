@@ -1,178 +1,148 @@
-import { useEffect, useRef, type RefObject } from 'react'
-import WaveSurfer from 'wavesurfer.js'
-import RegionsPlugin from 'wavesurfer.js/plugins/regions'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Cue } from '../types'
+import { drawPeaksOnCanvas } from '../lib/peaks'
 import { formatTime } from '../lib/time'
 import './WaveformTimeline.css'
 
 interface WaveformTimelineProps {
   kind: 'none' | 'mp4' | 'youtube'
-  mediaUrl: string | null
-  videoRef: RefObject<HTMLVideoElement | null>
   duration: number
   currentTime: number
   cues: Cue[]
-  pendingStart: number | null
+  peaks: number[] | null
+  peaksStatus: 'idle' | 'building' | 'ready' | 'fallback'
   onSeek: (time: number) => void
+  onCueTimesChange: (id: string, times: { start: number; end?: number | null }) => void
 }
+
+type DragState = {
+  cueId: string
+  type: Cue['type']
+  grabOffsetSec: number
+} | null
 
 export function WaveformTimeline({
   kind,
-  mediaUrl,
-  videoRef,
   duration,
   currentTime,
   cues,
-  pendingStart,
+  peaks,
+  peaksStatus,
   onSeek,
+  onCueTimesChange,
 }: WaveformTimelineProps) {
-  const waveRef = useRef<HTMLDivElement>(null)
-  const wsRef = useRef<WaveSurfer | null>(null)
-  const regionsRef = useRef<ReturnType<typeof RegionsPlugin.create> | null>(null)
-  const rulerRef = useRef<HTMLDivElement>(null)
-  const onSeekRef = useRef(onSeek)
-  onSeekRef.current = onSeek
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [pxPerSec, setPxPerSec] = useState(40)
+  const [scrollLeft, setScrollLeft] = useState(0)
+  const [viewportWidth, setViewportWidth] = useState(640)
+  const dragRef = useRef<DragState>(null)
+  const suppressClickRef = useRef(false)
+  const onTimesRef = useRef(onCueTimesChange)
+  onTimesRef.current = onCueTimesChange
   const cuesRef = useRef(cues)
   cuesRef.current = cues
 
-  // MP4 waveform via wavesurfer synced to video element
   useEffect(() => {
-    if (kind !== 'mp4' || !waveRef.current || !mediaUrl) return
+    if (!duration || duration <= 0) return
+    const w = viewportRef.current?.clientWidth || 640
+    setViewportWidth(w)
+    setPxPerSec(Math.max(0.05, w / duration))
+    setScrollLeft(0)
+  }, [duration, kind])
 
-    let destroyed = false
-    let ws: WaveSurfer | null = null
-    let onWheel: ((e: WheelEvent) => void) | null = null
-    let zoomLevel = 50
-
-    const applyRegions = () => {
-      if (!regionsRef.current) return
-      const regions = regionsRef.current
-      regions.clearRegions()
-      for (const cue of cuesRef.current) {
-        if (cue.type === 'cue' && cue.end != null) {
-          regions.addRegion({
-            id: cue.id,
-            start: cue.start,
-            end: cue.end,
-            color: 'rgba(232, 168, 56, 0.28)',
-            drag: false,
-            resize: false,
-          })
-        } else {
-          const start = cue.start
-          const end = start + 0.05
-          regions.addRegion({
-            id: cue.id,
-            start,
-            end,
-            color: 'rgba(92, 196, 196, 0.75)',
-            drag: false,
-            resize: false,
-          })
-        }
-      }
-    }
-
-    const init = () => {
-      if (destroyed || !waveRef.current) return
-      const media = videoRef.current
-      const regions = RegionsPlugin.create()
-      regionsRef.current = regions
-
-      ws = WaveSurfer.create({
-        container: waveRef.current,
-        waveColor: 'rgba(180, 150, 100, 0.55)',
-        progressColor: 'rgba(232, 168, 56, 0.85)',
-        cursorColor: '#f0d9a8',
-        cursorWidth: 2,
-        barWidth: 2,
-        barGap: 1,
-        barRadius: 1,
-        height: 96,
-        normalize: true,
-        minPxPerSec: zoomLevel,
-        media: media ?? undefined,
-        url: media ? undefined : mediaUrl,
-        plugins: [regions],
-      })
-      wsRef.current = ws
-
-      ws.on('interaction', (t: number) => {
-        onSeekRef.current(t)
-      })
-      ws.on('ready', () => applyRegions())
-
-      onWheel = (e: WheelEvent) => {
-        if (!ws) return
-        e.preventDefault()
-        zoomLevel = Math.max(10, Math.min(400, zoomLevel + (e.deltaY > 0 ? -15 : 15)))
-        ws.zoom(zoomLevel)
-      }
-      waveRef.current.addEventListener('wheel', onWheel, { passive: false })
-    }
-
-    const hostEl = waveRef.current
-    const raf = requestAnimationFrame(init)
-
-    return () => {
-      destroyed = true
-      cancelAnimationFrame(raf)
-      if (hostEl && onWheel) hostEl.removeEventListener('wheel', onWheel)
-      ws?.destroy()
-      wsRef.current = null
-      regionsRef.current = null
-    }
-  }, [kind, mediaUrl, videoRef])
-
-  // Sync regions/markers when cues change
   useEffect(() => {
-    if (kind !== 'mp4' || !regionsRef.current) return
-    const regions = regionsRef.current
-    regions.clearRegions()
+    const el = viewportRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setViewportWidth(el.clientWidth))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [kind])
 
-    for (const cue of cues) {
-      if (cue.type === 'cue' && cue.end != null) {
-        regions.addRegion({
-          id: cue.id,
-          start: cue.start,
-          end: cue.end,
-          color: 'rgba(232, 168, 56, 0.28)',
-          drag: false,
-          resize: false,
-        })
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !peaks || !duration) return
+    drawPeaksOnCanvas(canvas, peaks, viewportWidth, 96, scrollLeft, pxPerSec, duration)
+  }, [peaks, duration, scrollLeft, pxPerSec, viewportWidth])
+
+  const clientXToTime = useCallback(
+    (clientX: number) => {
+      const el = viewportRef.current
+      if (!el || !duration) return 0
+      const rect = el.getBoundingClientRect()
+      const x = clientX - rect.left + scrollLeft
+      return Math.max(0, Math.min(duration, x / pxPerSec))
+    },
+    [duration, pxPerSec, scrollLeft],
+  )
+
+  const onWheel = useCallback(
+    (e: WheelEvent) => {
+      if (!duration) return
+      e.preventDefault()
+      const el = viewportRef.current
+      if (!el) return
+
+      if (e.ctrlKey || e.metaKey) {
+        const rect = el.getBoundingClientRect()
+        const mouseX = e.clientX - rect.left
+        const timeAtCursor = (scrollLeft + mouseX) / pxPerSec
+        const factor = e.deltaY > 0 ? 0.9 : 1.1
+        const minZoom = Math.max(0.05, viewportWidth / duration)
+        const next = Math.min(400, Math.max(minZoom, pxPerSec * factor))
+        const nextScroll = Math.max(0, timeAtCursor * next - mouseX)
+        setPxPerSec(next)
+        setScrollLeft(Math.min(nextScroll, Math.max(0, duration * next - viewportWidth)))
+        return
+      }
+
+      const dx = e.deltaX !== 0 ? e.deltaX : e.deltaY
+      setScrollLeft((s) => {
+        const max = Math.max(0, duration * pxPerSec - viewportWidth)
+        return Math.max(0, Math.min(max, s + dx))
+      })
+    },
+    [duration, pxPerSec, scrollLeft, viewportWidth],
+  )
+
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el || kind === 'none') return
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [onWheel, kind])
+
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const drag = dragRef.current
+      if (!drag || !duration) return
+      suppressClickRef.current = true
+      const t = clientXToTime(e.clientX)
+      const start = Math.max(0, Math.min(duration, t - drag.grabOffsetSec))
+      if (drag.type === 'bullet') {
+        onTimesRef.current(drag.cueId, { start, end: null })
       } else {
-        const start = cue.start
-        const end = Math.min(duration || cue.start + 0.05, cue.start + 0.05)
-        regions.addRegion({
-          id: cue.id,
-          start,
-          end,
-          color: 'rgba(92, 196, 196, 0.75)',
-          drag: false,
-          resize: false,
-        })
+        onTimesRef.current(drag.cueId, { start })
       }
     }
-
-    if (pendingStart != null) {
-      regions.addRegion({
-        id: '__pending__',
-        start: Math.min(pendingStart, currentTime),
-        end: Math.max(pendingStart + 0.02, currentTime),
-        color: 'rgba(232, 168, 56, 0.18)',
-        drag: false,
-        resize: false,
-      })
+    const onUp = () => {
+      dragRef.current = null
+      window.setTimeout(() => {
+        suppressClickRef.current = false
+      }, 0)
     }
-  }, [cues, pendingStart, currentTime, duration, kind])
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [clientXToTime, duration])
 
-  const pct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0
-
-  const handleRulerClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!duration || kind === 'none') return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    onSeek(ratio * duration)
+  const handleClick = (e: React.MouseEvent) => {
+    if (suppressClickRef.current) return
+    if ((e.target as HTMLElement).closest('[data-marker]')) return
+    onSeek(clientXToTime(e.clientX))
   }
 
   if (kind === 'none') {
@@ -183,79 +153,108 @@ export function WaveformTimeline({
     )
   }
 
+  const playheadLeft = currentTime * pxPerSec - scrollLeft
+  const hint =
+    peaksStatus === 'building'
+      ? 'Building waveform…'
+      : peaksStatus === 'fallback'
+        ? 'Overview timeline (waveform skipped for long clip) · scroll=pan · pinch/ctrl+scroll=zoom'
+        : 'Scroll to pan · pinch / ctrl+scroll to zoom · drag markers to adjust'
+
   return (
     <div className="timeline">
       <div className="timeline-meta">
         <span>Waveform / timeline</span>
-        <span className="timeline-hint">
-          {kind === 'youtube'
-            ? 'YouTube: scrub ruler (audio waveform needs local MP4)'
-            : 'Click waveform to seek · scroll to zoom'}
-        </span>
+        <span className="timeline-hint">{hint}</span>
       </div>
 
-      {kind === 'mp4' ? (
-        <div className="wave-wrap">
-          <div ref={waveRef} className="wave-host" />
-        </div>
-      ) : (
-        <div
-          ref={rulerRef}
-          className="ruler"
-          onClick={handleRulerClick}
-          role="slider"
-          aria-valuemin={0}
-          aria-valuemax={duration}
-          aria-valuenow={currentTime}
-          aria-label="Timeline"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowLeft') onSeek(Math.max(0, currentTime - 1))
-            if (e.key === 'ArrowRight') onSeek(Math.min(duration, currentTime + 1))
-          }}
-        >
-          <div className="ruler-track" />
-          <div className="ruler-playhead" style={{ left: `${pct}%` }} />
+      <div
+        ref={viewportRef}
+        className="timeline-viewport"
+        onClick={handleClick}
+        role="slider"
+        aria-valuemin={0}
+        aria-valuemax={duration}
+        aria-valuenow={currentTime}
+        aria-label="Timeline"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft') onSeek(Math.max(0, currentTime - 1))
+          if (e.key === 'ArrowRight') onSeek(Math.min(duration, currentTime + 1))
+        }}
+      >
+        {peaks ? <canvas ref={canvasRef} className="timeline-canvas" /> : <div className="timeline-fallback-band" />}
+
+        <div className="timeline-markers" style={{ width: Math.max(viewportWidth, duration * pxPerSec), transform: `translateX(${-scrollLeft}px)` }}>
           {cues.map((cue) => {
-            if (!duration) return null
-            if (cue.type === 'cue' && cue.end != null) {
-              const left = (cue.start / duration) * 100
-              const width = ((cue.end - cue.start) / duration) * 100
+            if (cue.type === 'bullet') {
+              const left = cue.start * pxPerSec
               return (
                 <div
                   key={cue.id}
-                  className="ruler-region"
-                  style={{ left: `${left}%`, width: `${Math.max(width, 0.3)}%` }}
-                  title={`#${cue.number} ${formatTime(cue.start)}–${formatTime(cue.end)}`}
+                  data-marker
+                  className="marker-bullet"
+                  style={{ left }}
+                  title={`#${cue.number} @ ${formatTime(cue.start)}`}
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    dragRef.current = {
+                      cueId: cue.id,
+                      type: 'bullet',
+                      grabOffsetSec: clientXToTime(e.clientX) - cue.start,
+                    }
+                  }}
                 />
               )
             }
-            const left = (cue.start / duration) * 100
+            const end = cue.end ?? cue.start + 0.1
+            const left = cue.start * pxPerSec
+            const width = Math.max(4, (end - cue.start) * pxPerSec)
             return (
               <div
                 key={cue.id}
-                className="ruler-bullet"
-                style={{ left: `${left}%` }}
-                title={`#${cue.number} bullet @ ${formatTime(cue.start)}`}
-              />
+                data-marker
+                className="marker-region"
+                style={{ left, width }}
+                title={`#${cue.number} ${formatTime(cue.start)}–${formatTime(end)} · drag to adjust`}
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  dragRef.current = {
+                    cueId: cue.id,
+                    type: 'cue',
+                    grabOffsetSec: clientXToTime(e.clientX) - cue.start,
+                  }
+                }}
+              >
+                <span className="marker-label">#{cue.number}</span>
+              </div>
             )
           })}
-          {pendingStart != null && duration > 0 && (
-            <div
-              className="ruler-region is-pending"
-              style={{
-                left: `${(Math.min(pendingStart, currentTime) / duration) * 100}%`,
-                width: `${(Math.abs(currentTime - pendingStart) / duration) * 100}%`,
-              }}
-            />
-          )}
-          <div className="ruler-ticks">
-            <span>{formatTime(0)}</span>
-            <span>{formatTime(duration / 2)}</span>
-            <span>{formatTime(duration)}</span>
-          </div>
         </div>
-      )}
+
+        <div
+          className="timeline-playhead"
+          style={{ left: Math.max(-2, Math.min(viewportWidth, playheadLeft)) }}
+        />
+
+        <div className="timeline-ticks">
+          <span>{formatTime(scrollLeft / pxPerSec, duration >= 3600)}</span>
+          <span>
+            {formatTime(
+              Math.min(duration, (scrollLeft + viewportWidth / 2) / pxPerSec),
+              duration >= 3600,
+            )}
+          </span>
+          <span>
+            {formatTime(
+              Math.min(duration, (scrollLeft + viewportWidth) / pxPerSec),
+              duration >= 3600,
+            )}
+          </span>
+        </div>
+      </div>
     </div>
   )
 }

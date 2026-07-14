@@ -134,6 +134,35 @@
   gap: 0.35rem 0.5rem;
 }
 
+.cue-times {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cue-time-input {
+  width: 5.5rem;
+  box-sizing: border-box;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0.25rem 0.35rem;
+  border-radius: 3px;
+}
+
+.cue-time-input:focus {
+  outline: 1px solid var(--amber-dim);
+  border-color: var(--amber-dim);
+}
+
+.cue-time-sep {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 .cue-num {
   font-family: var(--font-display);
   font-weight: 600;

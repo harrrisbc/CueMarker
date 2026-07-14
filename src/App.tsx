@@ -7,6 +7,8 @@ import { useCues } from './hooks/useCues'
 import { usePlayer } from './hooks/usePlayer'
 import { captureVideoFrame } from './lib/screenshot'
 import { exportCuesCsv, exportCuesPdf } from './lib/export'
+import { extractPeaksFromBlob, shouldAttemptPeaks } from './lib/peaks'
+import { downloadProjectJson, readProjectJsonFile } from './lib/projectJson'
 import { extractYouTubeId } from './lib/time'
 import {
   clearMediaBlob,
@@ -22,20 +24,22 @@ function App() {
   const [projectName, setProjectName] = useState('Untitled Rehearsal')
   const [mediaKind, setMediaKind] = useState<MediaKind>('none')
   const [mp4Url, setMp4Url] = useState<string | null>(null)
+  const [mp4Blob, setMp4Blob] = useState<Blob | null>(null)
   const [youtubeId, setYoutubeId] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [hydrated, setHydrated] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  const [peaks, setPeaks] = useState<number[] | null>(null)
+  const [peaksStatus, setPeaksStatus] = useState<'idle' | 'building' | 'ready' | 'fallback'>('idle')
 
   const {
     cues,
-    pendingStart,
-    isRecording,
     replaceCues,
-    startOrFinishCue,
+    syncMediaDuration,
+    addContinuousCue,
     addBullet,
-    cancelPending,
     updateCue,
+    setCueTimes,
     deleteCue,
   } = useCues()
 
@@ -53,6 +57,11 @@ function App() {
   const mp4UrlRef = useRef(mp4Url)
   mp4UrlRef.current = mp4Url
 
+  // Keep continuous cue ends aligned to media duration
+  useEffect(() => {
+    if (duration > 0) syncMediaDuration(duration)
+  }, [duration, syncMediaDuration])
+
   // Hydrate from IndexedDB once
   useEffect(() => {
     let cancelled = false
@@ -69,11 +78,15 @@ function App() {
           setMediaKind('youtube')
           setYoutubeId(project.media.youtubeId)
           setFileName(null)
+          setMp4Blob(null)
+          setPeaks(null)
+          setPeaksStatus('idle')
         } else if (project.media.kind === 'mp4') {
           const blob = await loadMediaBlob()
           if (blob) {
             const url = URL.createObjectURL(blob)
             setMp4Url(url)
+            setMp4Blob(blob)
             setMediaKind('mp4')
             setFileName(project.media.fileName)
             setYoutubeId(null)
@@ -90,6 +103,46 @@ function App() {
       cancelled = true
     }
   }, [replaceCues])
+
+  // Peak extraction for MP4 (skipped for long / large files)
+  useEffect(() => {
+    let cancelled = false
+    if (mediaKind !== 'mp4' || !mp4Blob) {
+      setPeaks(null)
+      setPeaksStatus(mediaKind === 'none' ? 'idle' : 'fallback')
+      return
+    }
+
+    const run = async () => {
+      if (duration <= 0) {
+        if (!cancelled) setPeaksStatus('building')
+        return
+      }
+      if (!shouldAttemptPeaks(duration, mp4Blob.size)) {
+        if (!cancelled) {
+          setPeaks(null)
+          setPeaksStatus('fallback')
+          setStatus('Long clip: using overview timeline (waveform skipped for stability)')
+        }
+        return
+      }
+      if (!cancelled) setPeaksStatus('building')
+      const result = await extractPeaksFromBlob(mp4Blob, duration)
+      if (cancelled) return
+      if (result) {
+        setPeaks(result.peaks[0] ?? null)
+        setPeaksStatus('ready')
+      } else {
+        setPeaks(null)
+        setPeaksStatus('fallback')
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [mediaKind, mp4Blob, duration])
 
   // Autosave
   useEffect(() => {
@@ -109,7 +162,6 @@ function App() {
     return () => window.clearTimeout(handle)
   }, [hydrated, projectName, mediaKind, youtubeId, fileName, cues])
 
-  // Revoke object URLs
   useEffect(() => {
     return () => {
       if (mp4UrlRef.current) URL.revokeObjectURL(mp4UrlRef.current)
@@ -122,77 +174,111 @@ function App() {
     return captureVideoFrame(controller.getVideoElement())
   }, [controller])
 
-  const handleImportMp4 = useCallback(
-    async (file: File) => {
-      if (mp4UrlRef.current) URL.revokeObjectURL(mp4UrlRef.current)
-      const url = URL.createObjectURL(file)
-      setMp4Url(url)
-      setMediaKind('mp4')
-      setYoutubeId(null)
-      setFileName(file.name)
-      cancelPending()
-      try {
-        await saveMediaBlob(file)
-      } catch {
-        setStatus('Warning: MP4 could not be cached locally (file may be too large)')
-      }
-      setStatus(`Loaded ${file.name}`)
-    },
-    [cancelPending],
-  )
+  const handleImportMp4 = useCallback(async (file: File) => {
+    if (mp4UrlRef.current) URL.revokeObjectURL(mp4UrlRef.current)
+    const url = URL.createObjectURL(file)
+    setMp4Url(url)
+    setMp4Blob(file)
+    setMediaKind('mp4')
+    setYoutubeId(null)
+    setFileName(file.name)
+    setPeaks(null)
+    setPeaksStatus('building')
+    try {
+      await saveMediaBlob(file)
+    } catch {
+      setStatus('Warning: MP4 could not be cached locally (file may be too large)')
+    }
+    setStatus(`Loaded ${file.name}`)
+  }, [])
 
-  const handleImportYouTube = useCallback(
-    async (url: string) => {
-      const id = extractYouTubeId(url)
-      if (!id) {
-        setStatus('Invalid YouTube URL')
-        return
-      }
-      if (mp4UrlRef.current) {
-        URL.revokeObjectURL(mp4UrlRef.current)
-        setMp4Url(null)
-      }
-      await clearMediaBlob()
-      setYoutubeId(id)
-      setMediaKind('youtube')
-      setFileName(null)
-      cancelPending()
-      setStatus('YouTube loaded — screenshots unavailable (browser limit)')
-    },
-    [cancelPending],
-  )
+  const handleImportYouTube = useCallback(async (url: string) => {
+    const id = extractYouTubeId(url)
+    if (!id) {
+      setStatus('Invalid YouTube URL')
+      return
+    }
+    if (mp4UrlRef.current) {
+      URL.revokeObjectURL(mp4UrlRef.current)
+      setMp4Url(null)
+    }
+    await clearMediaBlob()
+    setMp4Blob(null)
+    setPeaks(null)
+    setPeaksStatus('fallback')
+    setYoutubeId(id)
+    setMediaKind('youtube')
+    setFileName(null)
+    setStatus('YouTube loaded — screenshots unavailable (browser limit)')
+  }, [])
 
   const handleMarkCue = useCallback(() => {
     if (!hasMedia) return
     const t = controller.getCurrentTime()
     const thumb = grabThumb()
-    const result = startOrFinishCue(t, thumb)
-    if (result.action === 'started') setStatus(`Cue start @ ${t.toFixed(1)}s — press M again to end`)
-    else setStatus(`Cue #${result.cue?.number ?? ''} recorded`)
-  }, [hasMedia, controller, grabThumb, startOrFinishCue])
+    const cue = addContinuousCue(t, thumb)
+    setStatus(`Cue #${cue?.number ?? ''} @ ${t.toFixed(1)}s`)
+  }, [hasMedia, controller, grabThumb, addContinuousCue])
 
   const handleBullet = useCallback(() => {
-    if (!hasMedia || isRecording) return
+    if (!hasMedia) return
     const t = controller.getCurrentTime()
     const thumb = grabThumb()
     const cue = addBullet(t, thumb)
     setStatus(`Bullet #${cue.number} @ ${t.toFixed(1)}s`)
-  }, [hasMedia, isRecording, controller, grabThumb, addBullet])
+  }, [hasMedia, controller, grabThumb, addBullet])
 
-  // Keyboard shortcuts
+  const handleSaveJson = useCallback(() => {
+    downloadProjectJson({
+      projectName,
+      media: { kind: mediaKind, youtubeId, fileName },
+      cues,
+      updatedAt: Date.now(),
+    })
+    setStatus('Project JSON saved')
+  }, [projectName, mediaKind, youtubeId, fileName, cues])
+
+  const handleLoadJson = useCallback(
+    async (file: File) => {
+      try {
+        const project = await readProjectJsonFile(file)
+        setProjectName(project.projectName)
+        replaceCues(project.cues, duration)
+        if (project.media.kind === 'youtube' && project.media.youtubeId) {
+          if (mp4UrlRef.current) {
+            URL.revokeObjectURL(mp4UrlRef.current)
+            setMp4Url(null)
+          }
+          setMp4Blob(null)
+          await clearMediaBlob()
+          setYoutubeId(project.media.youtubeId)
+          setMediaKind('youtube')
+          setFileName(null)
+          setPeaks(null)
+          setPeaksStatus('fallback')
+          setStatus('JSON loaded · YouTube restored')
+        } else {
+          setFileName(project.media.fileName)
+          if (project.media.kind === 'mp4' && project.media.fileName && mediaKind !== 'mp4') {
+            setStatus(`JSON loaded — Import MP4: ${project.media.fileName}`)
+          } else if (project.media.kind === 'mp4' && mediaKind === 'mp4') {
+            setStatus('JSON cues loaded onto current MP4')
+          } else {
+            setStatus('JSON loaded')
+          }
+        }
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : 'Could not load JSON')
+      }
+    },
+    [replaceCues, duration, mediaKind],
+  )
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
       const tag = target?.tagName?.toLowerCase()
       if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) return
-
-      if (e.key === 'Escape') {
-        if (isRecording) {
-          cancelPending()
-          setStatus('Cue cancelled')
-        }
-        return
-      }
 
       if (e.key === 'm' || e.key === 'M') {
         e.preventDefault()
@@ -211,7 +297,7 @@ function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [handleMarkCue, handleBullet, cancelPending, isRecording, togglePlay, hasMedia])
+  }, [handleMarkCue, handleBullet, togglePlay, hasMedia])
 
   const noteBanner = useMemo(() => {
     if (mediaKind === 'youtube') {
@@ -231,8 +317,8 @@ function App() {
         onBullet={handleBullet}
         onExportCsv={() => exportCuesCsv(cues, projectName)}
         onExportPdf={() => void exportCuesPdf(cues, projectName)}
-        isRecording={isRecording}
-        pendingStart={pendingStart}
+        onSaveJson={handleSaveJson}
+        onLoadJson={handleLoadJson}
         hasMedia={hasMedia}
         cueCount={cues.length}
       />
@@ -259,17 +345,23 @@ function App() {
           />
           <WaveformTimeline
             kind={mediaKind}
-            mediaUrl={mp4Url}
-            videoRef={videoRef}
             duration={duration}
             currentTime={currentTime}
             cues={cues}
-            pendingStart={pendingStart}
+            peaks={peaks}
+            peaksStatus={peaksStatus}
             onSeek={seekTo}
+            onCueTimesChange={setCueTimes}
           />
         </main>
 
-        <CueList cues={cues} onUpdate={updateCue} onDelete={deleteCue} onJump={seekTo} />
+        <CueList
+          cues={cues}
+          mediaDuration={duration}
+          onUpdate={updateCue}
+          onDelete={deleteCue}
+          onJump={seekTo}
+        />
       </div>
     </div>
   )

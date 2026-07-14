@@ -13,8 +13,7 @@
     "idb-keyval": "^6.3.0",
     "jspdf": "^4.2.1",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "wavesurfer.js": "^7.12.10"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",

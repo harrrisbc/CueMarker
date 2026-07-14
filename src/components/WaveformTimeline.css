@@ -28,90 +28,114 @@
   text-transform: none;
   letter-spacing: 0;
   opacity: 0.85;
+  text-align: right;
 }
 
-.wave-wrap {
-  border: 1px solid var(--line);
-  background: linear-gradient(180deg, #161311, #0e0c0a);
-  padding: 0.35rem 0.25rem;
-  overflow: hidden;
-}
-
-.wave-host {
-  width: 100%;
-  min-height: 96px;
-}
-
-.ruler {
+.timeline-viewport {
   position: relative;
-  height: 88px;
+  height: 110px;
   border: 1px solid var(--line);
   background: linear-gradient(180deg, #161311, #0e0c0a);
+  overflow: hidden;
   cursor: crosshair;
   outline: none;
+  touch-action: none;
+  user-select: none;
 }
 
-.ruler:focus-visible {
+.timeline-viewport:focus-visible {
   border-color: var(--amber);
 }
 
-.ruler-track {
+.timeline-canvas {
+  position: absolute;
+  inset: 0 0 22px 0;
+  width: 100%;
+  height: calc(100% - 22px);
+  pointer-events: none;
+}
+
+.timeline-fallback-band {
   position: absolute;
   left: 0;
   right: 0;
-  top: 50%;
+  top: 42%;
   height: 2px;
   background: rgba(240, 217, 168, 0.2);
-  transform: translateY(-50%);
+  pointer-events: none;
 }
 
-.ruler-playhead {
+.timeline-markers {
   position: absolute;
-  top: 8px;
+  top: 0;
+  left: 0;
+  height: calc(100% - 22px);
+  pointer-events: none;
+}
+
+.marker-region {
+  position: absolute;
+  top: 18px;
+  height: 40px;
+  background: rgba(232, 168, 56, 0.28);
+  border: 1px solid rgba(232, 168, 56, 0.55);
+  pointer-events: auto;
+  cursor: grab;
+  box-sizing: border-box;
+}
+
+.marker-region:active {
+  cursor: grabbing;
+}
+
+.marker-label {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 0.65rem;
+  color: var(--amber);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.marker-bullet {
+  position: absolute;
+  top: 12px;
+  width: 4px;
+  height: 52px;
+  background: var(--cyan);
+  transform: translateX(-2px);
+  box-shadow: 0 0 8px rgba(92, 196, 196, 0.45);
+  pointer-events: auto;
+  cursor: grab;
+  z-index: 2;
+}
+
+.marker-bullet:active {
+  cursor: grabbing;
+}
+
+.timeline-playhead {
+  position: absolute;
+  top: 6px;
   bottom: 22px;
   width: 2px;
   background: #f0d9a8;
   transform: translateX(-1px);
   pointer-events: none;
-  z-index: 3;
+  z-index: 4;
 }
 
-.ruler-region {
-  position: absolute;
-  top: 18px;
-  height: 36px;
-  background: rgba(232, 168, 56, 0.28);
-  border: 1px solid rgba(232, 168, 56, 0.5);
-  z-index: 1;
-  pointer-events: none;
-}
-
-.ruler-region.is-pending {
-  background: rgba(232, 168, 56, 0.15);
-  border-style: dashed;
-}
-
-.ruler-bullet {
-  position: absolute;
-  top: 14px;
-  width: 3px;
-  height: 44px;
-  background: var(--cyan);
-  transform: translateX(-1.5px);
-  box-shadow: 0 0 8px rgba(92, 196, 196, 0.45);
-  z-index: 2;
-  pointer-events: none;
-}
-
-.ruler-ticks {
+.timeline-ticks {
   position: absolute;
   left: 8px;
   right: 8px;
-  bottom: 6px;
+  bottom: 4px;
   display: flex;
   justify-content: space-between;
   font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
   pointer-events: none;
+  z-index: 5;
 }
