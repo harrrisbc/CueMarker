@@ -1,0 +1,236 @@
+.cue-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: linear-gradient(180deg, rgba(22, 19, 16, 0.98), rgba(12, 11, 10, 0.98));
+  border-left: 1px solid var(--line);
+}
+
+.cue-list-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.9rem 1rem 0.7rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.cue-list-header h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.cue-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.cue-empty {
+  padding: 1.5rem 1rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.cue-empty p {
+  margin: 0 0 0.5rem;
+}
+
+.cue-empty-hint {
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.cue-empty-hint kbd {
+  display: inline-block;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--panel-2);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  color: var(--amber);
+}
+
+.cue-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  flex: 1;
+}
+
+.cue-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 0.65rem;
+  padding: 0.55rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  animation: cue-in 0.28s ease-out;
+}
+
+.cue-row.cue-bullet {
+  border-color: rgba(92, 196, 196, 0.25);
+}
+
+.cue-row.cue-cue {
+  border-color: rgba(232, 168, 56, 0.22);
+}
+
+@keyframes cue-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cue-thumb {
+  width: 72px;
+  height: 48px;
+  overflow: hidden;
+  background: #0a0908;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.cue-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cue-thumb-ph {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 1.1rem;
+}
+
+.cue-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.cue-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+}
+
+.cue-num {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.cue-type-tag {
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.35rem;
+  border-radius: 2px;
+  border: 1px solid var(--line);
+}
+
+.cue-type-tag.cue {
+  color: var(--amber);
+  border-color: rgba(232, 168, 56, 0.4);
+}
+
+.cue-type-tag.bullet {
+  color: var(--cyan);
+  border-color: rgba(92, 196, 196, 0.4);
+}
+
+.cue-time {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.cue-field input,
+.cue-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 3px;
+  resize: vertical;
+}
+
+.cue-field input:focus,
+.cue-field textarea:focus {
+  outline: 1px solid var(--amber-dim);
+  border-color: var(--amber-dim);
+}
+
+.cue-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.cue-jump,
+.cue-delete {
+  appearance: none;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  padding: 0.28rem 0.55rem;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.cue-jump {
+  color: var(--amber);
+  border-color: rgba(232, 168, 56, 0.35);
+}
+
+.cue-jump:hover {
+  background: rgba(232, 168, 56, 0.12);
+}
+
+.cue-delete {
+  color: var(--danger);
+  border-color: rgba(220, 100, 80, 0.35);
+}
+
+.cue-delete:hover {
+  background: rgba(220, 100, 80, 0.1);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
